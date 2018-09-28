@@ -36,8 +36,11 @@ func FromString(s string) Path {
 }
 
 // FromCid safely converts a cid.Cid type to a Path type.
-func FromCid(c cid.Cid) Path {
-	return Path("/ipfs/" + c.String())
+func FromCid(f func(cid.Cid) string, c cid.Cid) Path {
+	if f == nil {
+		f = (cid.Cid).String
+	}
+	return Path("/ipfs/" + f(c))
 }
 
 // Segments returns the different elements of a path
@@ -134,12 +137,12 @@ func ParseCidToPath(txt string) (Path, error) {
 		return "", ErrNoComponents
 	}
 
-	c, err := cid.Decode(txt)
+	_, err := cid.Decode(txt)
 	if err != nil {
 		return "", err
 	}
 
-	return FromCid(c), nil
+	return Path("/ipfs/" + txt), nil
 }
 
 // IsValid checks if a path is a valid ipfs Path.
