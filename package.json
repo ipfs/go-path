@@ -9,9 +9,9 @@
   "gxDependencies": [
     {
       "author": "why",
-      "hash": "Qmccmovpo9isKeaaDzcxvT7mVJN1uKwn2xzSs1y8hb6PEs",
+      "hash": "QmNRAuGmvnVw8urHkUZQirhu42VTiZjVWASa2aTznEMmpP",
       "name": "go-merkledag",
-      "version": "1.1.32"
+      "version": "1.1.33"
     },
     {
       "author": "whyrusleeping",
@@ -36,6 +36,6 @@
   "license": "",
   "name": "go-path",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.34"
+  "version": "1.1.35"
 }
 
