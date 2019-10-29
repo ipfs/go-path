@@ -146,19 +146,18 @@ func ResolveSingle(ctx context.Context, ds ipld.NodeGetter, nd ipld.Node, names 
 // It uses the first path component as a hash (key) of the first node, then
 // resolves all other components walking the links, with ResolveLinks.
 func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) ([]ipld.Node, error) {
-	evt := log.EventBegin(ctx, "resolvePathComponents", logging.LoggableMap{"fpath": fpath})
-	defer evt.Done()
+	log.Infow("resolvePathComponents", "fpath", fpath)
 
 	h, parts, err := path.SplitAbsPath(fpath)
 	if err != nil {
-		evt.Append(logging.LoggableMap{"error": err.Error()})
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	log.Debug("resolve dag get")
 	nd, err := r.DAG.Get(ctx, h)
 	if err != nil {
-		evt.Append(logging.LoggableMap{"error": err.Error()})
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -173,9 +172,7 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 // ResolveLinks(nd, []string{"foo", "bar", "baz"})
 // would retrieve "baz" in ("bar" in ("foo" in nd.Links).Links).Links
 func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipld.Node, names []string) ([]ipld.Node, error) {
-
-	evt := log.EventBegin(ctx, "resolveLinks", logging.LoggableMap{"names": names})
-	defer evt.Done()
+	log.Infow("resolveLinks", "names", names)
 	result := make([]ipld.Node, 0, len(names)+1)
 	result = append(result, ndd)
 	nd := ndd // dup arg workaround
@@ -188,10 +185,10 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipld.Node, names []stri
 
 		lnk, rest, err := r.ResolveOnce(ctx, r.DAG, nd, names)
 		if err == dag.ErrLinkNotFound {
-			evt.Append(logging.LoggableMap{"error": err.Error()})
+			log.Error(err.Error())
 			return result, ErrNoLink{Name: names[0], Node: nd.Cid()}
 		} else if err != nil {
-			evt.Append(logging.LoggableMap{"error": err.Error()})
+			log.Error(err.Error())
 			return result, err
 		}
 
