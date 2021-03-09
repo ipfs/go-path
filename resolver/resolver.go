@@ -9,10 +9,17 @@ import (
 
 	path "github.com/ipfs/go-path"
 
+	"github.com/ipfs/go-blockservice"
 	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-fetcher"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
-	dag "github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-unixfsnode"
+	ipldp "github.com/ipld/go-ipld-prime"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipld/go-ipld-prime/traversal/selector"
+	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 )
 
 var log = logging.Logger("pathresolv")
@@ -38,19 +45,21 @@ func (e ErrNoLink) Error() string {
 type ResolveOnce func(ctx context.Context, ds ipld.NodeGetter, nd ipld.Node, names []string) (*ipld.Link, []string, error)
 
 // Resolver provides path resolution to IPFS
-// It has a pointer to a DAGService, which is uses to resolve nodes.
+// It has a pointer to a FetcherConfig, which is uses to resolve nodes.
 // TODO: now that this is more modular, try to unify this code with the
 //       the resolvers in namesys
 type Resolver struct {
-	DAG ipld.NodeGetter
+	FetchConfig fetcher.FetcherConfig
 
 	ResolveOnce ResolveOnce
 }
 
 // NewBasicResolver constructs a new basic resolver.
-func NewBasicResolver(ds ipld.DAGService) *Resolver {
+func NewBasicResolver(bs blockservice.BlockService) *Resolver {
+	fc := fetcher.NewFetcherConfig(bs)
+	fc.PrototypeChooser = pathFollowingNodeChooser
 	return &Resolver{
-		DAG:         ds,
+		FetchConfig: fc,
 		ResolveOnce: ResolveSingle,
 	}
 }
@@ -67,77 +76,72 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 		return c, nil, nil
 	}
 
-	nd, err := r.DAG.Get(ctx, c)
+	// create a selector to traverse all path segments but only match the last
+	pathSelector, err := pathLeafSelector(p[:len(p)-1])
 	if err != nil {
 		return cid.Cid{}, nil, err
 	}
 
-	for len(p) > 0 {
-		lnk, rest, err := r.ResolveOnce(ctx, r.DAG, nd, p)
-
-		// Note: have to drop the error here as `ResolveOnce` doesn't handle 'leaf'
-		// paths (so e.g. for `echo '{"foo":123}' | ipfs dag put` we wouldn't be
-		// able to resolve `zdpu[...]/foo`)
-		if lnk == nil {
-			break
-		}
-
-		if err != nil {
-			if err == dag.ErrLinkNotFound {
-				err = ErrNoLink{Name: p[0], Node: nd.Cid()}
-			}
-			return cid.Cid{}, nil, err
-		}
-
-		if len(rest) == 0 {
-			return lnk.Cid, nil, nil
-		}
-
-		next, err := lnk.GetNode(ctx, r.DAG)
-		if err != nil {
-			return cid.Cid{}, nil, err
-		}
-		nd = next
-		p = rest
-	}
-
-	if len(p) == 0 {
-		return nd.Cid(), nil, nil
-	}
-
-	// Confirm the path exists within the object
-	val, rest, err := nd.Resolve(p)
+	// resolve node before last path segment
+	nodes, err := r.resolveNodes(ctx, c, pathSelector)
 	if err != nil {
-		if err == dag.ErrLinkNotFound {
-			err = ErrNoLink{Name: p[0], Node: nd.Cid()}
-		}
+		return cid.Cid{}, nil, err
+	}
+	if len(nodes) < 1 {
+		return cid.Cid{}, nil, fmt.Errorf("path %v did not resolve to a node", fpath)
+	}
+	parent := nodes[len(nodes)-1]
+
+	// find final path segment within node
+	nd, err := parent.LookupByString(p[len(p)-1])
+	if err != nil {
 		return cid.Cid{}, nil, err
 	}
 
-	if len(rest) > 0 {
-		return cid.Cid{}, nil, errors.New("path failed to resolve fully")
+	if nd.Kind() != ipldp.Kind_Link {
+		return cid.Cid{}, nil, fmt.Errorf("path %v resolves to something other than a cid link: %v", fpath, nd)
 	}
-	switch val.(type) {
-	case *ipld.Link:
-		return cid.Cid{}, nil, errors.New("inconsistent ResolveOnce / nd.Resolve")
-	default:
-		return nd.Cid(), p, nil
+
+	lnk, err := nd.AsLink()
+	if err != nil {
+		return cid.Cid{}, nil, err
 	}
+
+	clnk, ok := lnk.(cidlink.Link)
+	if !ok {
+		return cid.Cid{}, nil, fmt.Errorf("path %v resolves to something other than a cid link: %v", fpath, lnk)
+	}
+
+	return clnk.Cid, nil, nil
 }
 
 // ResolvePath fetches the node for given path. It returns the last item
 // returned by ResolvePathComponents.
-func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipld.Node, error) {
+func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node, error) {
 	// validate path
 	if err := fpath.IsValid(); err != nil {
 		return nil, err
 	}
 
-	nodes, err := r.ResolvePathComponents(ctx, fpath)
-	if err != nil || nodes == nil {
+	c, p, err := path.SplitAbsPath(fpath)
+	if err != nil {
 		return nil, err
 	}
-	return nodes[len(nodes)-1], err
+
+	// create a selector to traverse all path segments but only match the last
+	pathSelector, err := pathLeafSelector(p)
+	if err != nil {
+		return nil, err
+	}
+
+	nodes, err := r.resolveNodes(ctx, c, pathSelector)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) < 1 {
+		return nil, fmt.Errorf("path %v did not resolve to a node", fpath)
+	}
+	return nodes[len(nodes)-1], nil
 }
 
 // ResolveSingle simply resolves one hop of a path through a graph with no
@@ -149,65 +153,117 @@ func ResolveSingle(ctx context.Context, ds ipld.NodeGetter, nd ipld.Node, names 
 // ResolvePathComponents fetches the nodes for each segment of the given path.
 // It uses the first path component as a hash (key) of the first node, then
 // resolves all other components walking the links, with ResolveLinks.
-func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) ([]ipld.Node, error) {
+func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) ([]ipldp.Node, error) {
 	evt := log.EventBegin(ctx, "resolvePathComponents", logging.LoggableMap{"fpath": fpath})
 	defer evt.Done()
 
-	h, parts, err := path.SplitAbsPath(fpath)
-	if err != nil {
-		evt.Append(logging.LoggableMap{"error": err.Error()})
+	// validate path
+	if err := fpath.IsValid(); err != nil {
 		return nil, err
 	}
 
-	log.Debug("resolve dag get")
-	nd, err := r.DAG.Get(ctx, h)
+	c, p, err := path.SplitAbsPath(fpath)
 	if err != nil {
-		evt.Append(logging.LoggableMap{"error": err.Error()})
 		return nil, err
 	}
 
-	return r.ResolveLinks(ctx, nd, parts)
+	// create a selector to traverse all path segments but only match the last
+	pathSelector, err := pathAllSelector(p)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.resolveNodes(ctx, c, pathSelector)
 }
 
 // ResolveLinks iteratively resolves names by walking the link hierarchy.
-// Every node is fetched from the DAGService, resolving the next name.
+// Every node is fetched from the fetcher, resolving the next name.
 // Returns the list of nodes forming the path, starting with ndd. This list is
 // guaranteed never to be empty.
 //
 // ResolveLinks(nd, []string{"foo", "bar", "baz"})
 // would retrieve "baz" in ("bar" in ("foo" in nd.Links).Links).Links
-func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipld.Node, names []string) ([]ipld.Node, error) {
+func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []string) ([]ipldp.Node, error) {
 
 	evt := log.EventBegin(ctx, "resolveLinks", logging.LoggableMap{"names": names})
 	defer evt.Done()
-	result := make([]ipld.Node, 0, len(names)+1)
-	result = append(result, ndd)
-	nd := ndd // dup arg workaround
 
-	// for each of the path components
-	for len(names) > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Minute)
-		defer cancel()
-
-		lnk, rest, err := r.ResolveOnce(ctx, r.DAG, nd, names)
-		if err == dag.ErrLinkNotFound {
-			evt.Append(logging.LoggableMap{"error": err.Error()})
-			return result, ErrNoLink{Name: names[0], Node: nd.Cid()}
-		} else if err != nil {
-			evt.Append(logging.LoggableMap{"error": err.Error()})
-			return result, err
-		}
-
-		nextnode, err := lnk.GetNode(ctx, r.DAG)
-		if err != nil {
-			evt.Append(logging.LoggableMap{"error": err.Error()})
-			return result, err
-		}
-
-		nd = nextnode
-		result = append(result, nextnode)
-		names = rest
+	// create a selector to traverse all path segments but only match the last
+	pathSelector, err := pathAllSelector(names)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+
+	// create a new cancellable session
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	session := r.FetchConfig.NewSession(ctx)
+
+	// traverse selector
+	nodes := []ipldp.Node{ndd}
+	err = session.NodeMatching(ctx, ndd, pathSelector, func(res fetcher.FetchResult) error {
+		nodes = append(nodes, res.Node)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return nodes, err
+}
+
+func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Selector) ([]ipldp.Node, error) {
+	// create a new cancellable session
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	session := r.FetchConfig.NewSession(ctx)
+
+	// traverse selector
+	nodes := []ipldp.Node{}
+	err := fetcher.BlockMatching(ctx, session, cidlink.Link{c}, sel, func(res fetcher.FetchResult) error {
+		nodes = append(nodes, res.Node)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return nodes, nil
+}
+
+func pathLeafSelector(path []string) (selector.Selector, error) {
+	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+	return pathSelector(path, ssb, func(p string, s builder.SelectorSpec) builder.SelectorSpec {
+		return ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) { efsb.Insert(p, s) })
+	})
+}
+
+func pathAllSelector(path []string) (selector.Selector, error) {
+	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+	return pathSelector(path, ssb, func(p string, s builder.SelectorSpec) builder.SelectorSpec {
+		return ssb.ExploreUnion(
+			ssb.Matcher(),
+			ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) { efsb.Insert(p, s) }),
+		)
+	})
+}
+
+func pathSelector(path []string, ssb builder.SelectorSpecBuilder, reduce func(string, builder.SelectorSpec) builder.SelectorSpec) (selector.Selector, error) {
+	spec := ssb.Matcher()
+	for i := len(path) - 1; i >= 0; i-- {
+		spec = reduce(path[i], spec)
+	}
+	return spec.Selector()
+}
+
+func pathFollowingNodeChooser(lnk ipldp.Link, lnkCtx ipldp.LinkContext) (ipldp.NodePrototype, error) {
+	c, ok := lnk.(cidlink.Link)
+	if ok {
+		if c.Cid.Prefix().Codec == 0x70 {
+			return unixfsnode.Type.UnixFSNode, nil
+		}
+	}
+	return fetcher.DefaultPrototypeChooser(lnk, lnkCtx)
 }
