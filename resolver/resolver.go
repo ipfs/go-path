@@ -99,7 +99,7 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 	}
 
 	if nd.Kind() != ipldp.Kind_Link {
-		return cid.Cid{}, nil, fmt.Errorf("path %v resolves to something other than a cid link: %v", fpath, nd)
+		return cid.Cid{}, nil, fmt.Errorf("ResolveToLastNode expected path %v to resolve to a link kind, but got %v", fpath, nd.Kind())
 	}
 
 	lnk, err := nd.AsLink()
