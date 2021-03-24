@@ -64,8 +64,9 @@ func NewBasicResolver(bs blockservice.BlockService) *Resolver {
 	}
 }
 
-// ResolveToLastNode walks the given path and returns the cid of the last node
-// referenced by the path
+// ResolveToLastNode walks the given path and returns the cid of the last block
+// referenced by the path, and the path segments to traverse from the final block boundary to the final node
+// within the block.
 func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.Cid, []string, error) {
 	c, p, err := path.SplitAbsPath(fpath)
 	if err != nil {
@@ -76,30 +77,35 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 		return c, nil, nil
 	}
 
-	// create a selector to traverse all path segments but only match the last
-	pathSelector, err := pathLeafSelector(p[:len(p)-1])
+	// create a selector to traverse and match all path segments
+	pathSelector, err := pathAllSelector(p[:len(p)-1])
 	if err != nil {
 		return cid.Cid{}, nil, err
 	}
 
 	// resolve node before last path segment
-	nodes, err := r.resolveNodes(ctx, c, pathSelector)
+	nodes, lastCid, depth, err := r.resolveNodes(ctx, c, pathSelector)
 	if err != nil {
 		return cid.Cid{}, nil, err
 	}
+
 	if len(nodes) < 1 {
 		return cid.Cid{}, nil, fmt.Errorf("path %v did not resolve to a node", fpath)
 	}
+
 	parent := nodes[len(nodes)-1]
+	lastSegment := p[len(p)-1]
 
 	// find final path segment within node
-	nd, err := parent.LookupByString(p[len(p)-1])
+	nd, err := parent.LookupByString(lastSegment)
 	if err != nil {
 		return cid.Cid{}, nil, err
 	}
 
+	// if last node is not a link, just return it's cid, add path to remainder and return
 	if nd.Kind() != ipldp.Kind_Link {
-		return cid.Cid{}, nil, fmt.Errorf("ResolveToLastNode expected path %v to resolve to a link kind, but got %v", fpath, nd.Kind())
+		// return the cid and the remainder of the path
+		return lastCid, p[len(p)-depth-1:], nil
 	}
 
 	lnk, err := nd.AsLink()
@@ -109,10 +115,10 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 
 	clnk, ok := lnk.(cidlink.Link)
 	if !ok {
-		return cid.Cid{}, nil, fmt.Errorf("path %v resolves to something other than a cid link: %v", fpath, lnk)
+		return cid.Cid{}, nil, fmt.Errorf("path %v resolves to a link that is not a cid link: %v", fpath, lnk)
 	}
 
-	return clnk.Cid, nil, nil
+	return clnk.Cid, []string{}, nil
 }
 
 // ResolvePath fetches the node for given path. It returns the last item
@@ -134,7 +140,7 @@ func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node
 		return nil, err
 	}
 
-	nodes, err := r.resolveNodes(ctx, c, pathSelector)
+	nodes, _, _, err := r.resolveNodes(ctx, c, pathSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +179,8 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 		return nil, err
 	}
 
-	return r.resolveNodes(ctx, c, pathSelector)
+	nodes, _, _, err := r.resolveNodes(ctx, c, pathSelector)
+	return nodes, err
 }
 
 // ResolveLinks iteratively resolves names by walking the link hierarchy.
@@ -213,7 +220,9 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 	return nodes, err
 }
 
-func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Selector) ([]ipldp.Node, error) {
+// Finds nodes matching the selector starting with a cid. Returns the matched nodes, the cid of the block containing
+// the last node, and the depth of the last node within its block (root is depth 0).
+func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Selector) ([]ipldp.Node, cid.Cid, int, error) {
 	// create a new cancellable session
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -221,16 +230,34 @@ func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Sel
 	session := r.FetchConfig.NewSession(ctx)
 
 	// traverse selector
+	lastLink := cid.Undef
+	depth := 0
 	nodes := []ipldp.Node{}
 	err := fetcher.BlockMatching(ctx, session, cidlink.Link{c}, sel, func(res fetcher.FetchResult) error {
+		if res.LastBlockLink == nil {
+			res.LastBlockLink = cidlink.Link{c}
+		}
+		cidLnk, ok := res.LastBlockLink.(cidlink.Link)
+		if !ok {
+			return fmt.Errorf("link is not a cidlink: %v", cidLnk)
+		}
+
+		// if we hit a block boundary
+		if !lastLink.Equals(cidLnk.Cid) {
+			depth = 0
+			lastLink = cidLnk.Cid
+		} else {
+			depth++
+		}
+
 		nodes = append(nodes, res.Node)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, cid.Undef, 0, err
 	}
 
-	return nodes, nil
+	return nodes, lastLink, depth, nil
 }
 
 func pathLeafSelector(path []string) (selector.Selector, error) {

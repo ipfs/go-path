@@ -3,9 +3,9 @@ package resolver_test
 import (
 	"context"
 	"fmt"
-	"github.com/ipfs/go-unixfsnode"
-	"github.com/stretchr/testify/assert"
+	"math"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,9 +14,13 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	merkledag "github.com/ipfs/go-merkledag"
 	path "github.com/ipfs/go-path"
 	"github.com/ipfs/go-path/resolver"
+	"github.com/ipfs/go-unixfsnode"
+	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -137,6 +141,25 @@ func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 
 	require.Equal(t, len(remainingPath), 0, "cannot have remaining path")
 	require.Equal(t, b.Cid(), resolvedCID)
+}
+
+func TestPathRemainder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bsrv := mockBlockService()
+
+	nd, err := ipldcbor.FromJSON(strings.NewReader(`{"foo": {"bar": "baz"}}`), math.MaxUint64, -1)
+	require.NoError(t, err)
+
+	err = bsrv.AddBlock(nd)
+	require.NoError(t, err)
+
+	resolver := resolver.NewBasicResolver(bsrv)
+	rp1, remainder, err := resolver.ResolveToLastNode(ctx, path.FromString(nd.String()+"/foo/bar"))
+	require.NoError(t, err)
+
+	assert.Equal(t, nd.Cid(), rp1)
+	require.Equal(t, "foo/bar", path.Join(remainder))
 }
 
 func mockBlockService() blockservice.BlockService {
