@@ -3,6 +3,7 @@ package resolver_test
 import (
 	"context"
 	"fmt"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"math"
 	"math/rand"
 	"strings"
@@ -66,7 +67,7 @@ func TestRecurivePathResolution(t *testing.T) {
 	}
 
 	resolver := resolver.NewBasicResolver(bsrv)
-	node, err := resolver.ResolvePath(ctx, p)
+	node, lnk, err := resolver.ResolvePath(ctx, p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +77,8 @@ func TestRecurivePathResolution(t *testing.T) {
 	fd := uNode.FieldData()
 	byts, err := fd.Must().AsBytes()
 	require.NoError(t, err)
+
+	assert.Equal(t, cidlink.Link{c.Cid()}, lnk)
 
 	assert.Equal(t, c.Data(), byts)
 	cKey := c.Cid()

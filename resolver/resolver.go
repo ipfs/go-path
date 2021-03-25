@@ -122,36 +122,37 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 }
 
 // ResolvePath fetches the node for given path. It returns the last item
-// returned by ResolvePathComponents.
-func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node, error) {
+// returned by ResolvePathComponents and the last link traversed which can be used to recover the block.
+func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node, ipldp.Link, error) {
 	// validate path
 	if err := fpath.IsValid(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	c, p, err := path.SplitAbsPath(fpath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// create a selector to traverse all path segments but only match the last
 	pathSelector, err := pathLeafSelector(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	nodes, _, _, err := r.resolveNodes(ctx, c, pathSelector)
+	nodes, c, _, err := r.resolveNodes(ctx, c, pathSelector)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(nodes) < 1 {
-		return nil, fmt.Errorf("path %v did not resolve to a node", fpath)
+		return nil, nil, fmt.Errorf("path %v did not resolve to a node", fpath)
 	}
-	return nodes[len(nodes)-1], nil
+	return nodes[len(nodes)-1], cidlink.Link{c}, nil
 }
 
 // ResolveSingle simply resolves one hop of a path through a graph with no
 // extra context (does not opaquely resolve through sharded nodes)
+// Deprecated: fetch node as ipld-prime or convert it and then use a selector to traverse through it.
 func ResolveSingle(ctx context.Context, ds ipld.NodeGetter, nd ipld.Node, names []string) (*ipld.Link, []string, error) {
 	return nd.ResolveLink(names)
 }
