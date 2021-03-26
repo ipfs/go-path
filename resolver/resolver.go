@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ipld/go-ipld-prime/schema"
 	"time"
 
 	path "github.com/ipfs/go-path"
@@ -98,7 +99,11 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 
 	// find final path segment within node
 	nd, err := parent.LookupByString(lastSegment)
-	if err != nil {
+	switch err.(type) {
+	case nil:
+	case schema.ErrNoSuchField:
+		return cid.Undef, nil, ErrNoLink{Name: lastSegment, Node: lastCid}
+	default:
 		return cid.Cid{}, nil, err
 	}
 
