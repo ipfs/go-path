@@ -92,6 +92,8 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 
 	if len(nodes) < 1 {
 		return cid.Cid{}, nil, fmt.Errorf("path %v did not resolve to a node", fpath)
+	} else if len(nodes) < len(p) {
+		return cid.Undef, nil, ErrNoLink{Name: p[len(nodes)-1], Node: lastCid}
 	}
 
 	parent := nodes[len(nodes)-1]
