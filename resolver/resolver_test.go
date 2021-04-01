@@ -3,12 +3,13 @@ package resolver_test
 import (
 	"context"
 	"fmt"
-	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"math"
 	"math/rand"
 	"strings"
 	"testing"
 	"time"
+
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 
 	"github.com/ipfs/go-blockservice"
 	ds "github.com/ipfs/go-datastore"
@@ -67,12 +68,13 @@ func TestRecurivePathResolution(t *testing.T) {
 	}
 
 	resolver := resolver.NewBasicResolver(bsrv)
+	resolver.FetchConfig.AugmentChooser = unixfsnode.AugmentPrototypeChooser
 	node, lnk, err := resolver.ResolvePath(ctx, p)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	uNode, ok := node.(unixfsnode.UnixFSNode)
+	uNode, ok := node.(unixfsnode.PathedPBNode)
 	require.True(t, ok)
 	fd := uNode.FieldData()
 	byts, err := fd.Must().AsBytes()
@@ -139,6 +141,7 @@ func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 	require.NoError(t, err)
 
 	resolver := resolver.NewBasicResolver(bsrv)
+	resolver.FetchConfig.AugmentChooser = unixfsnode.AugmentPrototypeChooser
 	resolvedCID, remainingPath, err := resolver.ResolveToLastNode(ctx, p)
 	require.NoError(t, err)
 

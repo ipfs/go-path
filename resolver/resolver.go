@@ -5,8 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ipld/go-ipld-prime/schema"
 	"time"
+
+	"github.com/ipld/go-ipld-prime/schema"
 
 	path "github.com/ipfs/go-path"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/ipfs/go-fetcher"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
-	"github.com/ipfs/go-unixfsnode"
 	ipldp "github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
@@ -42,26 +42,19 @@ func (e ErrNoLink) Error() string {
 	return fmt.Sprintf("no link named %q under %s", e.Name, e.Node.String())
 }
 
-// ResolveOnce resolves path through a single node
-type ResolveOnce func(ctx context.Context, ds ipld.NodeGetter, nd ipld.Node, names []string) (*ipld.Link, []string, error)
-
 // Resolver provides path resolution to IPFS
 // It has a pointer to a FetcherConfig, which is uses to resolve nodes.
 // TODO: now that this is more modular, try to unify this code with the
 //       the resolvers in namesys
 type Resolver struct {
 	FetchConfig fetcher.FetcherConfig
-
-	ResolveOnce ResolveOnce
 }
 
 // NewBasicResolver constructs a new basic resolver.
 func NewBasicResolver(bs blockservice.BlockService) *Resolver {
 	fc := fetcher.NewFetcherConfig(bs)
-	fc.PrototypeChooser = pathFollowingNodeChooser
 	return &Resolver{
 		FetchConfig: fc,
-		ResolveOnce: ResolveSingle,
 	}
 }
 
@@ -291,14 +284,4 @@ func pathSelector(path []string, ssb builder.SelectorSpecBuilder, reduce func(st
 		spec = reduce(path[i], spec)
 	}
 	return spec.Selector()
-}
-
-func pathFollowingNodeChooser(lnk ipldp.Link, lnkCtx ipldp.LinkContext) (ipldp.NodePrototype, error) {
-	c, ok := lnk.(cidlink.Link)
-	if ok {
-		if c.Cid.Prefix().Codec == 0x70 {
-			return unixfsnode.Type.UnixFSNode, nil
-		}
-	}
-	return fetcher.DefaultPrototypeChooser(lnk, lnkCtx)
 }
