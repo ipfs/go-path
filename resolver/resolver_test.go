@@ -3,16 +3,27 @@ package resolver_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+
+	"github.com/ipfs/go-blockservice"
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
+	merkledag "github.com/ipfs/go-merkledag"
 	path "github.com/ipfs/go-path"
 	"github.com/ipfs/go-path/resolver"
-
-	ipld "github.com/ipfs/go-ipld-format"
-	merkledag "github.com/ipfs/go-merkledag"
-	dagmock "github.com/ipfs/go-merkledag/test"
+	"github.com/ipfs/go-unixfsnode"
+	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func randNode() *merkledag.ProtoNode {
@@ -25,7 +36,7 @@ func randNode() *merkledag.ProtoNode {
 
 func TestRecurivePathResolution(t *testing.T) {
 	ctx := context.Background()
-	dagService := dagmock.Mock()
+	bsrv := mockBlockService()
 
 	a := randNode()
 	b := randNode()
@@ -41,8 +52,8 @@ func TestRecurivePathResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, n := range []ipld.Node{a, b, c} {
-		err = dagService.Add(ctx, n)
+	for _, n := range []*merkledag.ProtoNode{a, b, c} {
+		err = bsrv.AddBlock(n)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,19 +67,23 @@ func TestRecurivePathResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolver := resolver.NewBasicResolver(dagService)
-	node, err := resolver.ResolvePath(ctx, p)
+	resolver := resolver.NewBasicResolver(bsrv)
+	resolver.FetchConfig.AugmentChooser = unixfsnode.AugmentPrototypeChooser
+	node, lnk, err := resolver.ResolvePath(ctx, p)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	uNode, ok := node.(unixfsnode.PathedPBNode)
+	require.True(t, ok)
+	fd := uNode.FieldData()
+	byts, err := fd.Must().AsBytes()
+	require.NoError(t, err)
+
+	assert.Equal(t, cidlink.Link{c.Cid()}, lnk)
+
+	assert.Equal(t, c.Data(), byts)
 	cKey := c.Cid()
-	key := node.Cid()
-	if key.String() != cKey.String() {
-		t.Fatal(fmt.Errorf(
-			"recursive path resolution failed for %s: %s != %s",
-			p.String(), key.String(), cKey.String()))
-	}
 
 	rCid, rest, err := resolver.ResolveToLastNode(ctx, p)
 	if err != nil {
@@ -108,40 +123,52 @@ func TestRecurivePathResolution(t *testing.T) {
 
 func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 	ctx := context.Background()
-	dagService := dagmock.Mock()
+	bsrv := mockBlockService()
 
 	a := randNode()
 	b := randNode()
 
 	err := a.AddNodeLink("child", b)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	err = dagService.Add(ctx, a)
-	if err != nil {
-		t.Fatal(err)
-	}
+	err = bsrv.AddBlock(a)
+	require.NoError(t, err)
 
 	aKey := a.Cid()
 
 	segments := []string{aKey.String(), "child"}
 	p, err := path.FromSegments("/ipfs/", segments...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	resolver := resolver.NewBasicResolver(dagService)
+	resolver := resolver.NewBasicResolver(bsrv)
+	resolver.FetchConfig.AugmentChooser = unixfsnode.AugmentPrototypeChooser
 	resolvedCID, remainingPath, err := resolver.ResolveToLastNode(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if len(remainingPath) > 0 {
-		t.Fatal("cannot have remaining path")
-	}
+	require.Equal(t, len(remainingPath), 0, "cannot have remaining path")
+	require.Equal(t, b.Cid(), resolvedCID)
+}
 
-	if !resolvedCID.Equals(b.Cid()) {
-		t.Fatal("resolved to the wrong CID")
-	}
+func TestPathRemainder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bsrv := mockBlockService()
+
+	nd, err := ipldcbor.FromJSON(strings.NewReader(`{"foo": {"bar": "baz"}}`), math.MaxUint64, -1)
+	require.NoError(t, err)
+
+	err = bsrv.AddBlock(nd)
+	require.NoError(t, err)
+
+	resolver := resolver.NewBasicResolver(bsrv)
+	rp1, remainder, err := resolver.ResolveToLastNode(ctx, path.FromString(nd.String()+"/foo/bar"))
+	require.NoError(t, err)
+
+	assert.Equal(t, nd.Cid(), rp1)
+	require.Equal(t, "foo/bar", path.Join(remainder))
+}
+
+func mockBlockService() blockservice.BlockService {
+	bstore := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	return blockservice.New(bstore, offline.Exchange(bstore))
 }
