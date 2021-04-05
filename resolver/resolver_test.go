@@ -68,7 +68,7 @@ func TestRecurivePathResolution(t *testing.T) {
 	}
 
 	resolver := resolver.NewBasicResolver(bsrv)
-	resolver.FetchConfig.AugmentChooser = unixfsnode.AugmentPrototypeChooser
+	resolver.FetchConfig.NodeReifier = unixfsnode.Reify
 	node, lnk, err := resolver.ResolvePath(ctx, p)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +141,8 @@ func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 	require.NoError(t, err)
 
 	resolver := resolver.NewBasicResolver(bsrv)
-	resolver.FetchConfig.AugmentChooser = unixfsnode.AugmentPrototypeChooser
+	resolver.FetchConfig.NodeReifier = unixfsnode.Reify
+
 	resolvedCID, remainingPath, err := resolver.ResolveToLastNode(ctx, p)
 	require.NoError(t, err)
 
