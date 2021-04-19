@@ -6,7 +6,7 @@ require (
 	github.com/ipfs/go-blockservice v0.1.4
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-datastore v0.4.5
-	github.com/ipfs/go-fetcher v1.2.0
+	github.com/ipfs/go-fetcher v1.2.1-0.20210410011454-571518e2eca7
 	github.com/ipfs/go-ipfs-blockstore v0.1.4
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
 	github.com/ipfs/go-ipld-cbor v0.0.3
