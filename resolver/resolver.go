@@ -11,11 +11,9 @@ import (
 
 	path "github.com/ipfs/go-path"
 
-	"github.com/ipfs/go-blockservice"
 	cid "github.com/ipfs/go-cid"
 	"github.com/ipfs/go-fetcher"
 	fetcherhelpers "github.com/ipfs/go-fetcher/helpers"
-	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
 	format "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipld/go-ipld-prime"
@@ -49,14 +47,13 @@ func (e ErrNoLink) Error() string {
 // TODO: now that this is more modular, try to unify this code with the
 //       the resolvers in namesys
 type Resolver struct {
-	FetchConfig bsfetcher.FetcherConfig
+	FetcherFactory fetcher.Factory
 }
 
 // NewBasicResolver constructs a new basic resolver.
-func NewBasicResolver(bs blockservice.BlockService) *Resolver {
-	fc := bsfetcher.NewFetcherConfig(bs)
+func NewBasicResolver(fetcherFactory fetcher.Factory) *Resolver {
 	return &Resolver{
-		FetchConfig: fc,
+		FetcherFactory: fetcherFactory,
 	}
 }
 
@@ -196,7 +193,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	session := r.FetchConfig.NewSession(ctx)
+	session := r.FetcherFactory.NewSession(ctx)
 
 	// traverse selector
 	nodes := []ipldp.Node{ndd}
@@ -218,7 +215,7 @@ func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel ipld.Node) (
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	session := r.FetchConfig.NewSession(ctx)
+	session := r.FetcherFactory.NewSession(ctx)
 
 	// traverse selector
 	lastLink := cid.Undef
