@@ -14,12 +14,14 @@ import (
 	"github.com/ipfs/go-blockservice"
 	cid "github.com/ipfs/go-cid"
 	"github.com/ipfs/go-fetcher"
-	ipld "github.com/ipfs/go-ipld-format"
+	fetcherhelpers "github.com/ipfs/go-fetcher/helpers"
+	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
+	format "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
+	"github.com/ipld/go-ipld-prime"
 	ipldp "github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
-	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 )
 
@@ -47,12 +49,12 @@ func (e ErrNoLink) Error() string {
 // TODO: now that this is more modular, try to unify this code with the
 //       the resolvers in namesys
 type Resolver struct {
-	FetchConfig fetcher.FetcherConfig
+	FetchConfig bsfetcher.FetcherConfig
 }
 
 // NewBasicResolver constructs a new basic resolver.
 func NewBasicResolver(bs blockservice.BlockService) *Resolver {
-	fc := fetcher.NewFetcherConfig(bs)
+	fc := bsfetcher.NewFetcherConfig(bs)
 	return &Resolver{
 		FetchConfig: fc,
 	}
@@ -72,10 +74,7 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 	}
 
 	// create a selector to traverse and match all path segments
-	pathSelector, err := pathAllSelector(p[:len(p)-1])
-	if err != nil {
-		return cid.Cid{}, nil, err
-	}
+	pathSelector := pathAllSelector(p[:len(p)-1])
 
 	// resolve node before last path segment
 	nodes, lastCid, depth, err := r.resolveNodes(ctx, c, pathSelector)
@@ -135,10 +134,7 @@ func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node
 	}
 
 	// create a selector to traverse all path segments but only match the last
-	pathSelector, err := pathLeafSelector(p)
-	if err != nil {
-		return nil, nil, err
-	}
+	pathSelector := pathLeafSelector(p)
 
 	nodes, c, _, err := r.resolveNodes(ctx, c, pathSelector)
 	if err != nil {
@@ -153,7 +149,7 @@ func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node
 // ResolveSingle simply resolves one hop of a path through a graph with no
 // extra context (does not opaquely resolve through sharded nodes)
 // Deprecated: fetch node as ipld-prime or convert it and then use a selector to traverse through it.
-func ResolveSingle(ctx context.Context, ds ipld.NodeGetter, nd ipld.Node, names []string) (*ipld.Link, []string, error) {
+func ResolveSingle(ctx context.Context, ds format.NodeGetter, nd format.Node, names []string) (*format.Link, []string, error) {
 	return nd.ResolveLink(names)
 }
 
@@ -175,10 +171,7 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 	}
 
 	// create a selector to traverse all path segments but only match the last
-	pathSelector, err := pathAllSelector(p)
-	if err != nil {
-		return nil, err
-	}
+	pathSelector := pathAllSelector(p)
 
 	nodes, _, _, err := r.resolveNodes(ctx, c, pathSelector)
 	return nodes, err
@@ -197,10 +190,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 	defer evt.Done()
 
 	// create a selector to traverse all path segments but only match the last
-	pathSelector, err := pathAllSelector(names)
-	if err != nil {
-		return nil, err
-	}
+	pathSelector := pathAllSelector(names)
 
 	// create a new cancellable session
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -210,7 +200,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 
 	// traverse selector
 	nodes := []ipldp.Node{ndd}
-	err = session.NodeMatching(ctx, ndd, pathSelector, func(res fetcher.FetchResult) error {
+	err := session.NodeMatching(ctx, ndd, pathSelector, func(res fetcher.FetchResult) error {
 		nodes = append(nodes, res.Node)
 		return nil
 	})
@@ -223,7 +213,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 
 // Finds nodes matching the selector starting with a cid. Returns the matched nodes, the cid of the block containing
 // the last node, and the depth of the last node within its block (root is depth 0).
-func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Selector) ([]ipldp.Node, cid.Cid, int, error) {
+func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel ipld.Node) ([]ipldp.Node, cid.Cid, int, error) {
 	// create a new cancellable session
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -234,7 +224,7 @@ func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Sel
 	lastLink := cid.Undef
 	depth := 0
 	nodes := []ipldp.Node{}
-	err := fetcher.BlockMatching(ctx, session, cidlink.Link{c}, sel, func(res fetcher.FetchResult) error {
+	err := fetcherhelpers.BlockMatching(ctx, session, cidlink.Link{c}, sel, func(res fetcher.FetchResult) error {
 		if res.LastBlockLink == nil {
 			res.LastBlockLink = cidlink.Link{c}
 		}
@@ -261,14 +251,14 @@ func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel selector.Sel
 	return nodes, lastLink, depth, nil
 }
 
-func pathLeafSelector(path []string) (selector.Selector, error) {
+func pathLeafSelector(path []string) ipld.Node {
 	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	return pathSelector(path, ssb, func(p string, s builder.SelectorSpec) builder.SelectorSpec {
 		return ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) { efsb.Insert(p, s) })
 	})
 }
 
-func pathAllSelector(path []string) (selector.Selector, error) {
+func pathAllSelector(path []string) ipld.Node {
 	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	return pathSelector(path, ssb, func(p string, s builder.SelectorSpec) builder.SelectorSpec {
 		return ssb.ExploreUnion(
@@ -278,10 +268,10 @@ func pathAllSelector(path []string) (selector.Selector, error) {
 	})
 }
 
-func pathSelector(path []string, ssb builder.SelectorSpecBuilder, reduce func(string, builder.SelectorSpec) builder.SelectorSpec) (selector.Selector, error) {
+func pathSelector(path []string, ssb builder.SelectorSpecBuilder, reduce func(string, builder.SelectorSpec) builder.SelectorSpec) ipld.Node {
 	spec := ssb.Matcher()
 	for i := len(path) - 1; i >= 0; i-- {
 		spec = reduce(path[i], spec)
 	}
-	return spec.Selector()
+	return spec.Node()
 }
