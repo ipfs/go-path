@@ -9,11 +9,16 @@ import (
 	"testing"
 	"time"
 
+	dagpb "github.com/ipld/go-codec-dagpb"
+	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipld/go-ipld-prime/schema"
 
 	"github.com/ipfs/go-blockservice"
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
+	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
@@ -67,8 +72,16 @@ func TestRecurivePathResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolver := resolver.NewBasicResolver(bsrv)
-	resolver.FetchConfig.NodeReifier = unixfsnode.Reify
+	fetcherFactory := bsfetcher.NewFetcherConfig(bsrv)
+	fetcherFactory.NodeReifier = unixfsnode.Reify
+	fetcherFactory.PrototypeChooser = dagpb.AddSupportToChooser(func(lnk ipld.Link, lnkCtx ipld.LinkContext) (ipld.NodePrototype, error) {
+		if tlnkNd, ok := lnkCtx.LinkNode.(schema.TypedLinkNode); ok {
+			return tlnkNd.LinkTargetNodePrototype(), nil
+		}
+		return basicnode.Prototype.Any, nil
+	})
+	resolver := resolver.NewBasicResolver(fetcherFactory)
+
 	node, lnk, err := resolver.ResolvePath(ctx, p)
 	if err != nil {
 		t.Fatal(err)
@@ -140,8 +153,15 @@ func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 	p, err := path.FromSegments("/ipfs/", segments...)
 	require.NoError(t, err)
 
-	resolver := resolver.NewBasicResolver(bsrv)
-	resolver.FetchConfig.NodeReifier = unixfsnode.Reify
+	fetcherFactory := bsfetcher.NewFetcherConfig(bsrv)
+	fetcherFactory.PrototypeChooser = dagpb.AddSupportToChooser(func(lnk ipld.Link, lnkCtx ipld.LinkContext) (ipld.NodePrototype, error) {
+		if tlnkNd, ok := lnkCtx.LinkNode.(schema.TypedLinkNode); ok {
+			return tlnkNd.LinkTargetNodePrototype(), nil
+		}
+		return basicnode.Prototype.Any, nil
+	})
+	fetcherFactory.NodeReifier = unixfsnode.Reify
+	resolver := resolver.NewBasicResolver(fetcherFactory)
 
 	resolvedCID, remainingPath, err := resolver.ResolveToLastNode(ctx, p)
 	require.NoError(t, err)
@@ -161,7 +181,9 @@ func TestPathRemainder(t *testing.T) {
 	err = bsrv.AddBlock(nd)
 	require.NoError(t, err)
 
-	resolver := resolver.NewBasicResolver(bsrv)
+	fetcherFactory := bsfetcher.NewFetcherConfig(bsrv)
+	resolver := resolver.NewBasicResolver(fetcherFactory)
+
 	rp1, remainder, err := resolver.ResolveToLastNode(ctx, path.FromString(nd.String()+"/foo/bar"))
 	require.NoError(t, err)
 
