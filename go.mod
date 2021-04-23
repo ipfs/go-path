@@ -1,6 +1,6 @@
 module github.com/ipfs/go-path
 
-go 1.14
+go 1.15
 
 require (
 	github.com/ipfs/go-cid v0.0.2
