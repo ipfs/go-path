@@ -1,32 +1,35 @@
 package resolver_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"math"
 	"math/rand"
 	"strings"
 	"testing"
 	"time"
 
+	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-blockservice"
+	"github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	dagpb "github.com/ipld/go-codec-dagpb"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/schema"
 
-	"github.com/ipfs/go-blockservice"
-	ds "github.com/ipfs/go-datastore"
-	dssync "github.com/ipfs/go-datastore/sync"
-	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	offline "github.com/ipfs/go-ipfs-exchange-offline"
-	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	merkledag "github.com/ipfs/go-merkledag"
 	path "github.com/ipfs/go-path"
 	"github.com/ipfs/go-path/resolver"
 	"github.com/ipfs/go-unixfsnode"
 	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
+	dagcbor "github.com/ipld/go-ipld-prime/codec/dagcbor"
+	dagjson "github.com/ipld/go-ipld-prime/codec/dagjson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,19 +178,29 @@ func TestPathRemainder(t *testing.T) {
 	defer cancel()
 	bsrv := mockBlockService()
 
-	nd, err := ipldcbor.FromJSON(strings.NewReader(`{"foo": {"bar": "baz"}}`), math.MaxUint64, -1)
+	nb := basicnode.Prototype.Any.NewBuilder()
+	err := dagjson.Decode(nb, strings.NewReader(`{"foo": {"bar": "baz"}}`))
 	require.NoError(t, err)
-
-	err = bsrv.AddBlock(nd)
+	out := new(bytes.Buffer)
+	err = dagcbor.Encode(nb.Build(), out)
 	require.NoError(t, err)
-
+	lnk, err := cid.Prefix{
+		Version:  1,
+		Codec:    0x71,
+		MhType:   0x17,
+		MhLength: 20,
+	}.Sum(out.Bytes())
+	require.NoError(t, err)
+	blk, err := blocks.NewBlockWithCid(out.Bytes(), lnk)
+	require.NoError(t, err)
+	bsrv.AddBlock(blk)
 	fetcherFactory := bsfetcher.NewFetcherConfig(bsrv)
 	resolver := resolver.NewBasicResolver(fetcherFactory)
 
-	rp1, remainder, err := resolver.ResolveToLastNode(ctx, path.FromString(nd.String()+"/foo/bar"))
+	rp1, remainder, err := resolver.ResolveToLastNode(ctx, path.FromString(lnk.String()+"/foo/bar"))
 	require.NoError(t, err)
 
-	assert.Equal(t, nd.Cid(), rp1)
+	assert.Equal(t, lnk, rp1)
 	require.Equal(t, "foo/bar", path.Join(remainder))
 }
 
