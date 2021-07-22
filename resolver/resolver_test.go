@@ -10,13 +10,8 @@ import (
 	"time"
 
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
-	ds "github.com/ipfs/go-datastore"
-	dssync "github.com/ipfs/go-datastore/sync"
 	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	dagpb "github.com/ipld/go-codec-dagpb"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
@@ -24,6 +19,7 @@ import (
 	"github.com/ipld/go-ipld-prime/schema"
 
 	merkledag "github.com/ipfs/go-merkledag"
+	dagmock "github.com/ipfs/go-merkledag/test"
 	path "github.com/ipfs/go-path"
 	"github.com/ipfs/go-path/resolver"
 	"github.com/ipfs/go-unixfsnode"
@@ -44,7 +40,7 @@ func randNode() *merkledag.ProtoNode {
 
 func TestRecurivePathResolution(t *testing.T) {
 	ctx := context.Background()
-	bsrv := mockBlockService()
+	bsrv := dagmock.Bserv()
 
 	a := randNode()
 	b := randNode()
@@ -176,7 +172,7 @@ func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 func TestPathRemainder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bsrv := mockBlockService()
+	bsrv := dagmock.Bserv()
 
 	nb := basicnode.Prototype.Any.NewBuilder()
 	err := dagjson.Decode(nb, strings.NewReader(`{"foo": {"bar": "baz"}}`))
@@ -202,9 +198,4 @@ func TestPathRemainder(t *testing.T) {
 
 	assert.Equal(t, lnk, rp1)
 	require.Equal(t, "foo/bar", path.Join(remainder))
-}
-
-func mockBlockService() blockservice.BlockService {
-	bstore := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
-	return blockservice.New(bstore, offline.Exchange(bstore))
 }
