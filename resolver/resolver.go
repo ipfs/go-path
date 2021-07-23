@@ -167,7 +167,7 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 		return nil, err
 	}
 
-	// create a selector to traverse all path segments but only match the last
+	// create a selector to traverse and match all path segments
 	pathSelector := pathAllSelector(p)
 
 	nodes, _, _, err := r.resolveNodes(ctx, c, pathSelector)
@@ -186,7 +186,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 	evt := log.EventBegin(ctx, "resolveLinks", logging.LoggableMap{"names": names})
 	defer evt.Done()
 
-	// create a selector to traverse all path segments but only match the last
+	// create a selector to traverse and match all path segments
 	pathSelector := pathAllSelector(names)
 
 	// create a new cancellable session
