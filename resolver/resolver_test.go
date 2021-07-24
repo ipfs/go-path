@@ -132,10 +132,64 @@ func TestRecurivePathResolution(t *testing.T) {
 			p.String(), rCid.String(), cKey.String()))
 	}
 }
+func TestResolveToLastNode_ErrNoLink(t *testing.T) {
+	ctx := context.Background()
+	bsrv := dagmock.Bserv()
+
+	a := randNode()
+	b := randNode()
+	c := randNode()
+
+	err := b.AddNodeLink("grandchild", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = a.AddNodeLink("child", b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, n := range []*merkledag.ProtoNode{a, b, c} {
+		err = bsrv.AddBlock(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	aKey := a.Cid()
+
+	fetcherFactory := bsfetcher.NewFetcherConfig(bsrv)
+	fetcherFactory.PrototypeChooser = dagpb.AddSupportToChooser(func(lnk ipld.Link, lnkCtx ipld.LinkContext) (ipld.NodePrototype, error) {
+		if tlnkNd, ok := lnkCtx.LinkNode.(schema.TypedLinkNode); ok {
+			return tlnkNd.LinkTargetNodePrototype(), nil
+		}
+		return basicnode.Prototype.Any, nil
+	})
+	fetcherFactory.NodeReifier = unixfsnode.Reify
+	r := resolver.NewBasicResolver(fetcherFactory)
+
+	// test missing link intermediate segment
+	segments := []string{aKey.String(), "cheese", "time"}
+	p, err := path.FromSegments("/ipfs/", segments...)
+	require.NoError(t, err)
+
+	_, _, err = r.ResolveToLastNode(ctx, p)
+	require.EqualError(t, err, resolver.ErrNoLink{Name: "cheese", Node: aKey}.Error())
+
+	// test missing link at end
+	bKey := b.Cid()
+	segments = []string{aKey.String(), "child", "apples"}
+	p, err = path.FromSegments("/ipfs/", segments...)
+	require.NoError(t, err)
+
+	_, _, err = r.ResolveToLastNode(ctx, p)
+	require.EqualError(t, err, resolver.ErrNoLink{Name: "apples", Node: bKey}.Error())
+}
 
 func TestResolveToLastNode_NoUnnecessaryFetching(t *testing.T) {
 	ctx := context.Background()
-	bsrv := mockBlockService()
+	bsrv := dagmock.Bserv()
 
 	a := randNode()
 	b := randNode()

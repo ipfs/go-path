@@ -43,7 +43,7 @@ func (e ErrNoLink) Error() string {
 }
 
 // Resolver provides path resolution to IPFS
-// It has a pointer to a FetcherConfig, which is uses to resolve nodes.
+// It reference to a FetcherFactory, which is uses to resolve nodes.
 // TODO: now that this is more modular, try to unify this code with the
 //       the resolvers in namesys
 type Resolver struct {
@@ -175,7 +175,7 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 }
 
 // ResolveLinks iteratively resolves names by walking the link hierarchy.
-// Every node is fetched from the fetcher, resolving the next name.
+// Every node is fetched from the Fetcher, resolving the next name.
 // Returns the list of nodes forming the path, starting with ndd. This list is
 // guaranteed never to be empty.
 //
