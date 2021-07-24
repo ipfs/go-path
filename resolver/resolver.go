@@ -17,7 +17,6 @@ import (
 	format "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipld/go-ipld-prime"
-	ipldp "github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
@@ -99,7 +98,7 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 	}
 
 	// if last node is not a link, just return it's cid, add path to remainder and return
-	if nd.Kind() != ipldp.Kind_Link {
+	if nd.Kind() != ipld.Kind_Link {
 		// return the cid and the remainder of the path
 		return lastCid, p[len(p)-depth-1:], nil
 	}
@@ -119,7 +118,7 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 
 // ResolvePath fetches the node for given path. It returns the last item
 // returned by ResolvePathComponents and the last link traversed which can be used to recover the block.
-func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node, ipldp.Link, error) {
+func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipld.Node, ipld.Link, error) {
 	// validate path
 	if err := fpath.IsValid(); err != nil {
 		return nil, nil, err
@@ -140,7 +139,7 @@ func (r *Resolver) ResolvePath(ctx context.Context, fpath path.Path) (ipldp.Node
 	if len(nodes) < 1 {
 		return nil, nil, fmt.Errorf("path %v did not resolve to a node", fpath)
 	}
-	return nodes[len(nodes)-1], cidlink.Link{c}, nil
+	return nodes[len(nodes)-1], cidlink.Link{Cid: c}, nil
 }
 
 // ResolveSingle simply resolves one hop of a path through a graph with no
@@ -153,7 +152,8 @@ func ResolveSingle(ctx context.Context, ds format.NodeGetter, nd format.Node, na
 // ResolvePathComponents fetches the nodes for each segment of the given path.
 // It uses the first path component as a hash (key) of the first node, then
 // resolves all other components walking the links, with ResolveLinks.
-func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) ([]ipldp.Node, error) {
+func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) ([]ipld.Node, error) {
+	//lint:ignore SA1019 TODO: replace EventBegin
 	evt := log.EventBegin(ctx, "resolvePathComponents", logging.LoggableMap{"fpath": fpath})
 	defer evt.Done()
 
@@ -181,8 +181,8 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 //
 // ResolveLinks(nd, []string{"foo", "bar", "baz"})
 // would retrieve "baz" in ("bar" in ("foo" in nd.Links).Links).Links
-func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []string) ([]ipldp.Node, error) {
-
+func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipld.Node, names []string) ([]ipld.Node, error) {
+	//lint:ignore SA1019 TODO: replace EventBegin
 	evt := log.EventBegin(ctx, "resolveLinks", logging.LoggableMap{"names": names})
 	defer evt.Done()
 
@@ -196,7 +196,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 	session := r.FetcherFactory.NewSession(ctx)
 
 	// traverse selector
-	nodes := []ipldp.Node{ndd}
+	nodes := []ipld.Node{ndd}
 	err := session.NodeMatching(ctx, ndd, pathSelector, func(res fetcher.FetchResult) error {
 		nodes = append(nodes, res.Node)
 		return nil
@@ -210,7 +210,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipldp.Node, names []str
 
 // Finds nodes matching the selector starting with a cid. Returns the matched nodes, the cid of the block containing
 // the last node, and the depth of the last node within its block (root is depth 0).
-func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel ipld.Node) ([]ipldp.Node, cid.Cid, int, error) {
+func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel ipld.Node) ([]ipld.Node, cid.Cid, int, error) {
 	// create a new cancellable session
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -220,10 +220,10 @@ func (r *Resolver) resolveNodes(ctx context.Context, c cid.Cid, sel ipld.Node) (
 	// traverse selector
 	lastLink := cid.Undef
 	depth := 0
-	nodes := []ipldp.Node{}
-	err := fetcherhelpers.BlockMatching(ctx, session, cidlink.Link{c}, sel, func(res fetcher.FetchResult) error {
+	nodes := []ipld.Node{}
+	err := fetcherhelpers.BlockMatching(ctx, session, cidlink.Link{Cid: c}, sel, func(res fetcher.FetchResult) error {
 		if res.LastBlockLink == nil {
-			res.LastBlockLink = cidlink.Link{c}
+			res.LastBlockLink = cidlink.Link{Cid: c}
 		}
 		cidLnk, ok := res.LastBlockLink.(cidlink.Link)
 		if !ok {

@@ -23,7 +23,6 @@ import (
 	path "github.com/ipfs/go-path"
 	"github.com/ipfs/go-path/resolver"
 	"github.com/ipfs/go-unixfsnode"
-	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
 	dagcbor "github.com/ipld/go-ipld-prime/codec/dagcbor"
 	dagjson "github.com/ipld/go-ipld-prime/codec/dagjson"
 	"github.com/stretchr/testify/assert"
@@ -92,7 +91,7 @@ func TestRecurivePathResolution(t *testing.T) {
 	byts, err := fd.Must().AsBytes()
 	require.NoError(t, err)
 
-	assert.Equal(t, cidlink.Link{c.Cid()}, lnk)
+	assert.Equal(t, cidlink.Link{Cid: c.Cid()}, lnk)
 
 	assert.Equal(t, c.Data(), byts)
 	cKey := c.Cid()
