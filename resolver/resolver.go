@@ -88,7 +88,7 @@ func (r *Resolver) ResolveToLastNode(ctx context.Context, fpath path.Path) (cid.
 	lastSegment := p[len(p)-1]
 
 	// find final path segment within node
-	nd, err := parent.LookupByString(lastSegment)
+	nd, err := parent.LookupBySegment(ipld.ParsePathSegment(lastSegment))
 	switch err.(type) {
 	case nil:
 	case schema.ErrNoSuchField:
