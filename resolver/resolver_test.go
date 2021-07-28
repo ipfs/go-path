@@ -252,3 +252,41 @@ func TestPathRemainder(t *testing.T) {
 	assert.Equal(t, lnk, rp1)
 	require.Equal(t, "foo/bar", path.Join(remainder))
 }
+
+func TestResolveToLastNode_MixedSegmentTypes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bsrv := dagmock.Bserv()
+	a := randNode()
+	err := bsrv.AddBlock(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nb := basicnode.Prototype.Any.NewBuilder()
+	json := `{"foo":{"bar":[0,{"boom":["baz",1,2,{"/":"CID"},"blop"]}]}}`
+	json = strings.ReplaceAll(json, "CID", a.Cid().String())
+	err = dagjson.Decode(nb, strings.NewReader(json))
+	require.NoError(t, err)
+	out := new(bytes.Buffer)
+	err = dagcbor.Encode(nb.Build(), out)
+	require.NoError(t, err)
+	lnk, err := cid.Prefix{
+		Version:  1,
+		Codec:    0x71,
+		MhType:   0x17,
+		MhLength: 20,
+	}.Sum(out.Bytes())
+	require.NoError(t, err)
+	blk, err := blocks.NewBlockWithCid(out.Bytes(), lnk)
+	require.NoError(t, err)
+	bsrv.AddBlock(blk)
+	fetcherFactory := bsfetcher.NewFetcherConfig(bsrv)
+	resolver := resolver.NewBasicResolver(fetcherFactory)
+
+	cid, remainder, err := resolver.ResolveToLastNode(ctx, path.FromString(lnk.String()+"/foo/bar/1/boom/3"))
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, len(remainder))
+	assert.True(t, cid.Equals(a.Cid()))
+}
