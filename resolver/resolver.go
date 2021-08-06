@@ -42,7 +42,7 @@ func (e ErrNoLink) Error() string {
 }
 
 // Resolver provides path resolution to IPFS
-// It reference to a FetcherFactory, which is uses to resolve nodes.
+// It references a FetcherFactory, which is uses to resolve nodes.
 // TODO: now that this is more modular, try to unify this code with the
 //       the resolvers in namesys
 type Resolver struct {
@@ -151,7 +151,7 @@ func ResolveSingle(ctx context.Context, ds format.NodeGetter, nd format.Node, na
 
 // ResolvePathComponents fetches the nodes for each segment of the given path.
 // It uses the first path component as a hash (key) of the first node, then
-// resolves all other components walking the links, with ResolveLinks.
+// resolves all other components walking the links via a selector traversal
 func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) ([]ipld.Node, error) {
 	//lint:ignore SA1019 TODO: replace EventBegin
 	evt := log.EventBegin(ctx, "resolvePathComponents", logging.LoggableMap{"fpath": fpath})
@@ -159,11 +159,13 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 
 	// validate path
 	if err := fpath.IsValid(); err != nil {
+		evt.Append(logging.LoggableMap{"error": err.Error()})
 		return nil, err
 	}
 
 	c, p, err := path.SplitAbsPath(fpath)
 	if err != nil {
+		evt.Append(logging.LoggableMap{"error": err.Error()})
 		return nil, err
 	}
 
@@ -171,6 +173,10 @@ func (r *Resolver) ResolvePathComponents(ctx context.Context, fpath path.Path) (
 	pathSelector := pathAllSelector(p)
 
 	nodes, _, _, err := r.resolveNodes(ctx, c, pathSelector)
+	if err != nil {
+		evt.Append(logging.LoggableMap{"error": err.Error()})
+	}
+
 	return nodes, err
 }
 
@@ -202,6 +208,7 @@ func (r *Resolver) ResolveLinks(ctx context.Context, ndd ipld.Node, names []stri
 		return nil
 	})
 	if err != nil {
+		evt.Append(logging.LoggableMap{"error": err.Error()})
 		return nil, err
 	}
 
