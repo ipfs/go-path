@@ -12,5 +12,6 @@ require (
 	github.com/ipfs/go-unixfsnode v1.1.1
 	github.com/ipld/go-codec-dagpb v1.2.1-0.20210330082435-8ec6b0fbad18
 	github.com/ipld/go-ipld-prime v0.9.1-0.20210402181957-7406578571d1
+	github.com/multiformats/go-multihash v0.0.15
 	github.com/stretchr/testify v1.7.0
 )

@@ -236,9 +236,9 @@ func TestPathRemainder(t *testing.T) {
 	require.NoError(t, err)
 	lnk, err := cid.Prefix{
 		Version:  1,
-		Codec:    0x71,
-		MhType:   0x17,
-		MhLength: 20,
+		Codec:    cid.DagCBOR,
+		MhType:   multihash.SHA2_256,
+		MhLength: 32,
 	}.Sum(out.Bytes())
 	require.NoError(t, err)
 	blk, err := blocks.NewBlockWithCid(out.Bytes(), lnk)
@@ -275,8 +275,8 @@ func TestResolveToLastNode_MixedSegmentTypes(t *testing.T) {
 	lnk, err := cid.Prefix{
 		Version:  1,
 		Codec:    cid.DagCBOR,
-		MhType:   multihash.SHA3_224,
-		MhLength: 28,
+		MhType:   multihash.SHA2_256,
+		MhLength: 32,
 	}.Sum(out.Bytes())
 	require.NoError(t, err)
 	blk, err := blocks.NewBlockWithCid(out.Bytes(), lnk)
