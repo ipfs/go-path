@@ -17,6 +17,7 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/schema"
+	"github.com/multiformats/go-multihash"
 
 	merkledag "github.com/ipfs/go-merkledag"
 	dagmock "github.com/ipfs/go-merkledag/test"
@@ -273,9 +274,9 @@ func TestResolveToLastNode_MixedSegmentTypes(t *testing.T) {
 	require.NoError(t, err)
 	lnk, err := cid.Prefix{
 		Version:  1,
-		Codec:    0x71,
-		MhType:   0x17,
-		MhLength: 20,
+		Codec:    cid.DagCBOR,
+		MhType:   multihash.SHA3_224,
+		MhLength: 28,
 	}.Sum(out.Bytes())
 	require.NoError(t, err)
 	blk, err := blocks.NewBlockWithCid(out.Bytes(), lnk)
