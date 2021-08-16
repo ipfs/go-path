@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.0.7
-	github.com/ipfs/go-fetcher v1.4.0
+	github.com/ipfs/go-fetcher v1.5.0
 	github.com/ipfs/go-ipld-format v0.2.0
 	github.com/ipfs/go-log v1.0.4
 	github.com/ipfs/go-merkledag v0.3.2
