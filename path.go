@@ -184,7 +184,7 @@ func SplitAbsPath(fpath Path) (cid.Cid, []string, error) {
 func decodeCid(cstr string) (cid.Cid, error) {
 	c, err := cid.Decode(cstr)
 	if err != nil && len(cstr) == 46 && cstr[:2] == "qm" { // https://github.com/ipfs/go-ipfs/issues/7792
-		return cid.Cid{}, fmt.Errorf("%v (possible lowercased CIDv0; consider converting to a case-agnostic CIDv1, such as base32)", err)
+		return cid.Cid{}, fmt.Errorf("%v (If you tried to access a CIDv0, it may have been converted to lower case automatically by a text input field (a good indicator is that all letters of the CID are now lower case). Consider converting it to a case-agnostic CIDv1, such as base32", err)
 	}
 	return c, err
 }
