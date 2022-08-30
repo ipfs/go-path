@@ -30,6 +30,24 @@ func FromCid(c cid.Cid) Path {
 	return Path("/ipfs/" + c.String())
 }
 
+// ToCid attempts to convert the Path to a CID. This should always work if
+// the path was created from ParsePath.
+func (p Path) ToCid() (cid.Cid, error) {
+	parts := strings.Split(p.String(), "/")
+	if len(parts) < 3 || parts[2] == "" {
+		return cid.Undef, &pathError{fmt.Errorf("not enough path components"), p.String()}
+	}
+
+	switch parts[1] {
+	// TODO: Silently allowing IPNS though ParsePath doesn't validate the CID
+	//  in that case.
+	case "ipfs", "ipld", "ipns":
+		return decodeCid(parts[2])
+	default:
+		return cid.Undef, &pathError{fmt.Errorf("invalid namespace %s to extract CID (/ipfs/<CID> or /ipld/<CID> expected)", parts[1]), p.String()}
+	}
+}
+
 // Segments returns the different elements of a path
 // (elements are delimited by a /).
 func (p Path) Segments() []string {

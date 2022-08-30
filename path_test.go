@@ -30,10 +30,16 @@ func TestPathParsing(t *testing.T) {
 	}
 
 	for p, expected := range cases {
-		_, err := ParsePath(p)
+		p, err := ParsePath(p)
 		valid := err == nil
 		if valid != expected {
 			t.Fatalf("expected %s to have valid == %t", p, expected)
+		}
+		if valid {
+			_, err := p.ToCid()
+			if err != nil {
+				t.Fatalf("ToCid(): failed to extract CID from valid path: %s", err)
+			}
 		}
 	}
 }
