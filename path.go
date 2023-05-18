@@ -14,6 +14,8 @@ import (
 //   - /ipfs/<cid>
 //   - /ipns/<cid>/path/to/folder
 //   - etc
+//
+// Deprecated: use github.com/ipfs/boxo/path.Path
 type Path string
 
 // ^^^
@@ -21,11 +23,15 @@ type Path string
 // would allow us to control creation, and cache segments.
 
 // FromString safely converts a string type to a Path type.
+//
+// Deprecated: use github.com/ipfs/boxo/path.FromString
 func FromString(s string) Path {
 	return Path(s)
 }
 
 // FromCid safely converts a cid.Cid type to a Path type.
+//
+// Deprecated: use github.com/ipfs/boxo/path.FromCid
 func FromCid(c cid.Cid) Path {
 	return Path("/ipfs/" + c.String())
 }
@@ -75,6 +81,8 @@ func (p Path) PopLastSegment() (Path, string, error) {
 }
 
 // FromSegments returns a path given its different segments.
+//
+// Deprecated: use github.com/ipfs/boxo/path.FromSegments
 func FromSegments(prefix string, seg ...string) (Path, error) {
 	return ParsePath(prefix + strings.Join(seg, "/"))
 }
@@ -84,6 +92,8 @@ func FromSegments(prefix string, seg ...string) (Path, error) {
 // The prefix will be added if not present in the given string.
 // This function will return an error when the given string is
 // not a valid ipfs path.
+//
+// Deprecated: use github.com/ipfs/boxo/path.ParsePath
 func ParsePath(txt string) (Path, error) {
 	parts := strings.Split(txt, "/")
 	if len(parts) == 1 {
@@ -130,6 +140,8 @@ func ParsePath(txt string) (Path, error) {
 }
 
 // ParseCidToPath takes a CID in string form and returns a valid ipfs Path.
+//
+// Deprecated: use github.com/ipfs/boxo/path.ParseCidToPath
 func ParseCidToPath(txt string) (Path, error) {
 	if txt == "" {
 		return "", &ErrInvalidPath{error: fmt.Errorf("empty"), path: txt}
@@ -150,17 +162,23 @@ func (p *Path) IsValid() error {
 }
 
 // Join joins strings slices using /
+//
+// Deprecated: use github.com/ipfs/boxo/path.Join
 func Join(pths []string) string {
 	return strings.Join(pths, "/")
 }
 
 // SplitList splits strings usings /
+//
+// Deprecated: use github.com/ipfs/boxo/path.SplitList
 func SplitList(pth string) []string {
 	return strings.Split(pth, "/")
 }
 
 // SplitAbsPath clean up and split fpath. It extracts the first component (which
 // must be a Multihash) and return it separately.
+//
+// Deprecated: use github.com/ipfs/boxo/path.SplitAbsPath
 func SplitAbsPath(fpath Path) (cid.Cid, []string, error) {
 	parts := fpath.Segments()
 	if parts[0] == "ipfs" || parts[0] == "ipld" {

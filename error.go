@@ -4,6 +4,7 @@ import (
 	"fmt"
 )
 
+// Deprecated: use github.com/ipfs/boxo/path.ErrInvalidPath
 type ErrInvalidPath struct {
 	error error
 	path  string

@@ -28,10 +28,14 @@ var log = logging.Logger("pathresolv")
 
 // ErrNoComponents is used when Paths after a protocol
 // do not contain at least one component
+//
+// Deprecated: use github.com/ipfs/boxo/path/resolver.ErrNoComponents
 var ErrNoComponents = errors.New(
 	"path must contain at least one component")
 
 // ErrNoLink is returned when a link is not found in a path
+//
+// Deprecated: use github.com/ipfs/boxo/path/resolver.ErrNoLink
 type ErrNoLink struct {
 	Name string
 	Node cid.Cid
@@ -44,6 +48,8 @@ func (e ErrNoLink) Error() string {
 }
 
 // Resolver provides path resolution to IPFS.
+//
+// Deprecated: use github.com/ipfs/boxo/path/resolver.Resolver
 type Resolver interface {
 	// ResolveToLastNode walks the given path and returns the cid of the
 	// last block referenced by the path, and the path segments to
@@ -70,6 +76,8 @@ type basicResolver struct {
 }
 
 // NewBasicResolver constructs a new basic resolver.
+//
+// Deprecated: use github.com/ipfs/boxo/path/resolver.NewBasicResolver
 func NewBasicResolver(fetcherFactory fetcher.Factory) Resolver {
 	return &basicResolver{
 		FetcherFactory: fetcherFactory,
@@ -178,6 +186,8 @@ func (r *basicResolver) ResolvePath(ctx context.Context, fpath path.Path) (ipld.
 // ResolveSingle simply resolves one hop of a path through a graph with no
 // extra context (does not opaquely resolve through sharded nodes)
 // Deprecated: fetch node as ipld-prime or convert it and then use a selector to traverse through it.
+//
+// Deprecated: use github.com/ipfs/boxo/path/resolver.ResolveSingle
 func ResolveSingle(ctx context.Context, ds format.NodeGetter, nd format.Node, names []string) (*format.Link, []string, error) {
 	_, span := internal.StartSpan(ctx, "ResolveSingle", trace.WithAttributes(attribute.Stringer("CID", nd.Cid())))
 	defer span.End()
